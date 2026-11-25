@@ -1,0 +1,13 @@
+   -    \    |                                                                                                                         Name                                           Id                                                        Version             Available      Source
+---------------------------------------------------------------------------------------------------------------------------------------------------
+Git                                            Git.Git                                                   2.43.0              2.47.1         winget
+Microsoft Edge                                 Microsoft.Edge                                            131.0.2903.…        131.0.2903.…   winget
+Notepad++ (64-bit x64)                         Notepad++.Notepad++                                       8.6.2               8.7.4          winget
+Microsoft Visual C++ 2015-2022 Redistributab…  Microsoft.VCRedist.2015+.x64                              14.38.33135.0       14.42.34433.0  winget
+7-Zip 23.01 (x64)                              7zip.7zip                                                 Unknown             24.09          winget
+メモ帳ツール                                   Contoso.Memo                                              1.0.0               1.2.0          winget
+Zoom Workplace                                 Zoom.Zoom                                                 5.17.11             6.3.0          winget
+Python 3.12.4 (64-bit)                         Python.Python.3.12                                        3.12.4                             winget
+Rockwell Automation Studio 5000 Logix Desig…   ARP\Machine\X86\{8E6A6B1C-0B8A-4C1E-9A5A-1D2B3C4D5E6F}    36.00.00
+Windows Terminal                               Microsoft.WindowsTerminal                                 1.21.3231.0                        winget
+Microsoft Photos                               Microsoft.Windows.Photos_8wekyb3d8bbwe                    2024.11100.16009.0

@@ -1,0 +1,81 @@
+{
+ "drivers": [
+  {
+   "DeviceName": "Intel(R) Wi-Fi 6E AX211 160MHz",
+   "DeviceClass": "NET",
+   "Manufacturer": "Intel Corporation",
+   "DriverProviderName": "Intel",
+   "DriverVersion": "22.200.0.6",
+   "DriverDate": "2023-02-14",
+   "InfName": "oem42.inf",
+   "DeviceID": "PCI\\VEN_8086&DEV_51F0\\3&11583659&0&A3",
+   "HardWareID": "PCI\\VEN_8086&DEV_51F0&SUBSYS_00948086&REV_01"
+  },
+  {
+   "DeviceName": "Realtek Audio",
+   "DeviceClass": "MEDIA",
+   "Manufacturer": "Realtek",
+   "DriverProviderName": "Realtek Semiconductor Corp.",
+   "DriverVersion": "6.0.9235.1",
+   "DriverDate": "2021-08-30",
+   "InfName": "oem12.inf",
+   "DeviceID": "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0257",
+   "HardWareID": "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0257&SUBSYS_102808B0&REV_1000"
+  },
+  {
+   "DeviceName": "Intel(R) Serial IO I2C Host Controller - 51E8",
+   "DeviceClass": "SYSTEM",
+   "Manufacturer": "Intel Corporation",
+   "DriverProviderName": "Intel Corporation",
+   "DriverVersion": "30.100.2129.8",
+   "DriverDate": "2021-07-16",
+   "InfName": "oem7.inf",
+   "DeviceID": "PCI\\VEN_8086&DEV_51E8",
+   "HardWareID": "PCI\\VEN_8086&DEV_51E8&SUBSYS_0B191028&REV_01"
+  },
+  {
+   "DeviceName": "Intel(R) Serial IO I2C Host Controller - 51E9",
+   "DeviceClass": "SYSTEM",
+   "Manufacturer": "Intel Corporation",
+   "DriverProviderName": "Intel Corporation",
+   "DriverVersion": "30.100.2129.8",
+   "DriverDate": "2021-07-16",
+   "InfName": "oem7.inf",
+   "DeviceID": "PCI\\VEN_8086&DEV_51E9",
+   "HardWareID": "PCI\\VEN_8086&DEV_51E9&SUBSYS_0B191028&REV_01"
+  },
+  {
+   "DeviceName": "NVIDIA RTX A1000 Laptop GPU",
+   "DeviceClass": "DISPLAY",
+   "Manufacturer": "NVIDIA",
+   "DriverProviderName": "NVIDIA",
+   "DriverVersion": "31.0.15.5222",
+   "DriverDate": "2024-03-08",
+   "InfName": "oem88.inf",
+   "DeviceID": "PCI\\VEN_10DE&DEV_25B9",
+   "HardWareID": "PCI\\VEN_10DE&DEV_25B9&SUBSYS_0B191028&REV_A1"
+  },
+  {
+   "DeviceName": "HID-compliant mouse",
+   "DeviceClass": "MOUSE",
+   "Manufacturer": "Microsoft",
+   "DriverProviderName": "Microsoft",
+   "DriverVersion": "10.0.22621.1",
+   "DriverDate": "2006-06-21",
+   "InfName": "msmouse.inf",
+   "DeviceID": "HID\\VID_046D&PID_C52B",
+   "HardWareID": "HID\\VID_046D&PID_C52B&REV_1211"
+  },
+  {
+   "DeviceName": "Standard SATA AHCI Controller",
+   "DeviceClass": "HDC",
+   "Manufacturer": "Standard SATA AHCI Controller",
+   "DriverProviderName": "Microsoft",
+   "DriverVersion": "10.0.22621.2506",
+   "DriverDate": "2006-06-21",
+   "InfName": "mshdc.inf",
+   "DeviceID": "PCI\\VEN_8086&DEV_7AE2",
+   "HardWareID": "PCI\\VEN_8086&DEV_7AE2&CC_0106"
+  }
+ ]
+}

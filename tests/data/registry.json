@@ -1,0 +1,75 @@
+[
+ {
+  "name": "Git",
+  "version": "2.43.0",
+  "publisher": "The Git Development Community",
+  "install_date": "20240110",
+  "scope": "machine",
+  "arch": "x64"
+ },
+ {
+  "name": "Notepad++ (64-bit x64)",
+  "version": "8.6.2",
+  "publisher": "Notepad++ Team",
+  "scope": "machine",
+  "arch": "x64"
+ },
+ {
+  "name": "Microsoft Visual C++ 2015-2022 Redistributable (x64) - 14.38.33135",
+  "version": "14.38.33135.0",
+  "publisher": "Microsoft Corporation",
+  "scope": "machine",
+  "arch": "x86"
+ },
+ {
+  "name": "7-Zip 23.01 (x64)",
+  "version": "",
+  "publisher": "Igor Pavlov",
+  "scope": "machine",
+  "arch": "x64"
+ },
+ {
+  "name": "Python 3.12.4 (64-bit)",
+  "version": "3.12.4",
+  "publisher": "Python Software Foundation",
+  "scope": "user"
+ },
+ {
+  "name": "Python 3.11.9 (64-bit)",
+  "version": "3.11.9",
+  "publisher": "Python Software Foundation",
+  "scope": "user"
+ },
+ {
+  "name": "Rockwell Automation Studio 5000 Logix Designer x86",
+  "version": "36.00.00",
+  "publisher": "Rockwell Automation",
+  "scope": "machine",
+  "arch": "x86"
+ },
+ {
+  "name": "Microsoft Edge",
+  "version": "131.0.2903.70",
+  "publisher": "Microsoft Corporation",
+  "scope": "machine",
+  "arch": "x86"
+ },
+ {
+  "name": "Zoom Workplace",
+  "version": "5.17.11",
+  "publisher": "Zoom Video Communications, Inc.",
+  "scope": "user"
+ },
+ {
+  "name": "Windows Terminal",
+  "version": "1.21.3231.0",
+  "publisher": "Microsoft Corporation",
+  "scope": "user"
+ },
+ {
+  "name": "Contoso Memo",
+  "version": "1.0.0",
+  "publisher": "Contoso",
+  "scope": "user"
+ }
+]

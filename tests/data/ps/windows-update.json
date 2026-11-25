@@ -1,0 +1,58 @@
+{
+ "updates": [
+  {
+   "id": "0b1c2d3e-0000-4000-8000-000000000001",
+   "rev": 200,
+   "title": "Intel Corporation - Net - 23.60.1.2",
+   "type": 2,
+   "kb": "",
+   "size": 48211000,
+   "categories": "Drivers",
+   "severity": null,
+   "browseOnly": true,
+   "driverModel": "Intel(R) Wi-Fi 6E AX211 160MHz",
+   "driverManufacturer": "Intel Corporation",
+   "driverClass": "Net",
+   "hardwareId": "pci\\ven_8086&dev_51f0&subsys_00948086&rev_01",
+   "driverDate": "2024-06-14"
+  },
+  {
+   "id": "0b1c2d3e-0000-4000-8000-000000000002",
+   "rev": 200,
+   "title": "Dell, Inc. - Firmware - 1.21.0",
+   "type": 2,
+   "kb": "",
+   "size": 31000000,
+   "categories": "Drivers",
+   "severity": null,
+   "browseOnly": true,
+   "driverModel": "System Firmware 1.21.0",
+   "driverManufacturer": "Dell, Inc.",
+   "driverClass": "Firmware",
+   "hardwareId": "UEFI\\RES_{3B7F0C8A-0000-0000-0000-000000000000}",
+   "driverDate": "2024-09-02"
+  },
+  {
+   "id": "0b1c2d3e-0000-4000-8000-000000000003",
+   "rev": 1,
+   "title": "2024-11 Cumulative Update for Windows 11 Version 23H2 for x64-based Systems (KB5046633)",
+   "type": 1,
+   "kb": "5046633",
+   "size": 780000000,
+   "categories": "Security Updates; Windows 11",
+   "severity": "Critical",
+   "browseOnly": false
+  },
+  {
+   "id": "0b1c2d3e-0000-4000-8000-000000000004",
+   "rev": 1,
+   "title": "Security Intelligence Update for Microsoft Defender Antivirus - KB2267602 (Version 1.421.1000.0)",
+   "type": 1,
+   "kb": "2267602",
+   "size": 95000000,
+   "categories": "Definition Updates",
+   "severity": null,
+   "browseOnly": false
+  }
+ ]
+}

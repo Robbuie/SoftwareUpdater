@@ -1,0 +1,17 @@
+[project]
+name = "softwareupdater"
+version = "0.1.0"
+description = "What on this Windows machine is out of date, and the way to update it"
+requires-python = ">=3.11"
+dependencies = [
+    "PySide6>=6.7",
+]
+
+[project.urls]
+Repository = "https://github.com/Robbuie/SoftwareUpdater"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The repository root, so `app` and `tests.sample` import under a bare
+# `pytest` as well as under `python -m pytest`, as in File Manager.
+pythonpath = ["."]
