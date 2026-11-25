@@ -43,9 +43,11 @@ class Kind:
     APP = "app"
     DRIVER = "driver"
     WINDOWS = "windows"
+    DEV = "dev"
 
 
-KIND_LABELS = {Kind.APP: "Application", Kind.DRIVER: "Driver", Kind.WINDOWS: "Windows"}
+KIND_LABELS = {Kind.APP: "Application", Kind.DRIVER: "Driver", Kind.WINDOWS: "Windows",
+               Kind.DEV: "Developer"}
 
 
 class Status:
@@ -56,6 +58,7 @@ class Status:
     UNKNOWN = "unknown"
     DONE = "done"          # updated during this session
     FAILED = "failed"      # an update was tried this session and did not go in
+    REMOVED = "removed"    # uninstalled during this session
 
 
 STATUS_LABELS = {
@@ -66,11 +69,12 @@ STATUS_LABELS = {
     Status.UNKNOWN: "Unknown",
     Status.DONE: "Updated",
     Status.FAILED: "Update failed",
+    Status.REMOVED: "Uninstalled",
 }
 
 #: Sort order of the Status column: what needs doing first.
 STATUS_ORDER = {Status.FAILED: 0, Status.UPDATE: 1, Status.OLD: 2, Status.DONE: 3,
-                Status.UNKNOWN: 4, Status.UNTRACKED: 5, Status.CURRENT: 6}
+                Status.REMOVED: 3, Status.UNKNOWN: 4, Status.UNTRACKED: 5, Status.CURRENT: 6}
 
 
 class Action:
@@ -78,6 +82,8 @@ class Action:
     WINGET = "winget"
     WU = "wu"
     VENDOR = "vendor"      # the manufacturer's tool or site
+    PIP = "pip"
+    NPM = "npm"
 
 
 @dataclass
@@ -93,6 +99,7 @@ class Installed:
     arch: str = ""
     key: str = ""
     uninstall: str = ""
+    quiet_uninstall: str = ""
 
 
 @dataclass
@@ -116,11 +123,27 @@ class Item:
     facts: list[tuple[str, str]] = field(default_factory=list)
     #: The outcome of an update tried this session.
     note: str = ""
+    #: Removing it: the recorded uninstall commands, where it lives, and for
+    #: whom. Empty for drivers and Windows updates.
+    uninstall: str = ""
+    quiet_uninstall: str = ""
+    location: str = ""
+    scope: str = ""
+    #: Developer packages: never taken by "Update all"; ticked one by one.
+    opt_in: bool = False
+    #: pip/npm: which interpreter or tool the package belongs to.
+    tool: str = ""
 
     @property
     def updatable(self) -> bool:
         return self.status in (Status.UPDATE, Status.FAILED) and self.action in (
-            Action.WINGET, Action.WU)
+            Action.WINGET, Action.WU, Action.PIP, Action.NPM)
+
+    @property
+    def removable(self) -> bool:
+        """Something this application can start an uninstaller for."""
+        return (self.kind == Kind.APP and self.status != Status.REMOVED
+                and bool(self.winget_id or self.uninstall or self.quiet_uninstall))
 
 
 def normalise(name: str) -> str:
@@ -167,6 +190,8 @@ class Sources:
     winget_upgrades: list[Row] | None = None
     drivers: list[DriverGroup] | None = None
     offers: list[Offer] | None = None
+    #: pip and npm packages with something newer (core/devtools.py).
+    dev: list | None = None
 
 
 def build(sources: Sources, *, today: _dt.date, old_years: float = 3.0,
@@ -176,7 +201,24 @@ def build(sources: Sources, *, today: _dt.date, old_years: float = 3.0,
     items.extend(_drivers(sources, today=today, old_years=old_years,
                           include_inbox=include_inbox, vendor_url=vendor_url))
     items.extend(_windows(sources))
+    items.extend(_dev(sources))
     return items
+
+
+def _dev(sources: Sources) -> list[Item]:
+    out = []
+    for package in sources.dev or []:
+        out.append(Item(
+            key=package.key, kind=Kind.DEV, name=f"{package.name} ({package.tool_label})",
+            installed=package.current, available=package.latest, status=Status.UPDATE,
+            source=package.manager, action=Action.PIP if package.manager == "pip" else Action.NPM,
+            opt_in=True, tool=package.tool,
+            facts=[("Package", package.name), ("Manager", package.manager),
+                   ("Belongs to", package.tool), ("Installed version", package.current),
+                   ("Latest", package.latest),
+                   ("Note", "Never included in Update all: a project may depend on this "
+                            "exact version. Tick it to update it.")]))
+    return out
 
 
 def _apps(sources: Sources) -> list[Item]:
@@ -231,6 +273,10 @@ def _app_item(entry: Installed | None, row: Row | None, upgrades: dict[str, Row]
         publisher=entry.publisher if entry else "",
         winget_id=row.id if tracked else "",
         winget_source=row.source if row is not None else "",
+        uninstall=entry.uninstall if entry else "",
+        quiet_uninstall=entry.quiet_uninstall if entry else "",
+        location=entry.location if entry else "",
+        scope=entry.scope if entry else "",
     )
     if upgrade is not None:
         item.status = Status.UPDATE
@@ -379,7 +425,7 @@ def _windows(sources: Sources) -> list[Item]:
 # What the window shows.
 # --------------------------------------------------------------------------
 
-SHOWS = ("updates", "all", "apps", "drivers", "windows", "ignored")
+SHOWS = ("updates", "all", "apps", "drivers", "windows", "dev", "ignored")
 
 
 def visible(item: Item, show: str, ignored: frozenset[str] | set[str]) -> bool:
@@ -396,6 +442,8 @@ def visible(item: Item, show: str, ignored: frozenset[str] | set[str]) -> bool:
         return item.kind == Kind.DRIVER
     if show == "windows":
         return item.kind == Kind.WINDOWS
+    if show == "dev":
+        return item.kind == Kind.DEV
     return True
 
 

@@ -1,6 +1,8 @@
-"""The window: title bar with the menus, the command row, the list of what is
-installed, and under it the details of the selected row beside the activity
-log.
+"""The window: title bar with the menus, the command row, three sections --
+Software, Cleanup, Security -- and the status line. Software is the list of
+what is installed with the details of the selected row beside the activity
+log; Cleanup and Security are pages of their own (`ui/cleanup.py`,
+`ui/security.py`) that answer for their own commands.
 
 Its shape is File Compare's -- the same custom title bar with Windows' own
 snapping and shadow kept (`winframe.py`), the same labelled command row, the
@@ -17,11 +19,12 @@ from __future__ import annotations
 import datetime as _dt
 import time
 
-from PySide6.QtCore import QEvent, QItemSelectionModel, QPoint, Qt, QTimer
+from PySide6.QtCore import QDir, QEvent, QItemSelectionModel, QPoint, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -33,6 +36,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QSplitter,
+    QStackedWidget,
+    QTabBar,
     QTreeView,
     QVBoxLayout,
     QWidget,
@@ -46,9 +51,12 @@ from app.core.loader import Loader
 from app.core.scan import STAGE_LABELS, Scan, stages
 from app.theme import sheet
 from app.theme.tokens import ACCENT_LABELS, ACCENTS, DENSITIES, DENSITY_LABELS, THEME_LABELS, THEMES
-from app.ui import winframe
+from app.ui import dialogs, winframe
 from app.ui.chrome import MenuBar, ToolBar
-from app.ui.commands import (COMMANDS, DISABLED, HIDDEN, SHOW_COMMANDS, TOGGLES, State)
+from app.ui.cleanup import CleanupPage
+from app.ui.commands import (COMMANDS, DISABLED, HIDDEN, SECTION_COMMANDS, SECTIONS,
+                             SHOW_COMMANDS, TOGGLES, State)
+from app.ui.security import SecurityPage
 from app.ui.model import (AVAILABLE, INSTALLED, KIND, NAME, SOURCE, STATUS, FilterProxy,
                           ItemModel, ItemRole)
 from app.ui.titlebar import TitleBar
@@ -56,12 +64,15 @@ from app.ui.titlebar import TitleBar
 KEYS = """\
 F5                        scan again
 Esc                       stop the scan or the updates
+Alt+1 / Alt+2 / Alt+3     Software, Cleanup, Security
 Ctrl+U                    update the selected rows
 Ctrl+Shift+U              update everything that can be updated here
+                          (pip and npm packages only when ticked)
+Ctrl+Delete               uninstall the selected programs
 Ctrl+A                    select every row with an update
 Delete / Insert           ignore the selected rows, show them again
 Ctrl+C                    copy the winget command for the selected rows
-Ctrl+1 .. Ctrl+6          Updates, All, Apps, Drivers, Windows, Ignored
+Ctrl+1 .. Ctrl+7          Updates, All, Apps, Drivers, Windows, Dev, Ignored
 Ctrl+F                    filter by name, id or version
 Ctrl+D                    the details panel
 Ctrl+Shift+H              export a report
@@ -88,6 +99,9 @@ class MainWindow(QMainWindow):
         self._loader.progress.connect(self._progress)
         self._scan_request = 0
         self._update_request = 0
+        self._uninstall_request = 0
+        self._leftover_request = 0
+        self._removals: dict[str, str] = {}
         self._scan: Scan | None = None
         self._scan_started = 0.0
         self._pending_stages: list[str] = []
@@ -177,12 +191,40 @@ class MainWindow(QMainWindow):
             self.split.setSizes([int(s) for s in sizes])
         self.lower.setVisible(bool(config.get("view.details")))
 
-        body = QWidget()
-        column = QVBoxLayout(body)
+        software = QWidget()
+        column = QVBoxLayout(software)
         column.setContentsMargins(10, 8, 10, 6)
         column.setSpacing(6)
         column.addWidget(self.notice)
         column.addWidget(self.split, 1)
+
+        # 0.2: the three sections, as File Compare's tab strip.
+        self.cleanup = CleanupPage(self)
+        self.security = SecurityPage(self)
+        self.pages = QStackedWidget()
+        self.pages.addWidget(software)
+        self.pages.addWidget(self.cleanup)
+        self.pages.addWidget(self.security)
+        self.sections = QTabBar()
+        self.sections.setExpanding(False)
+        self.sections.setDocumentMode(True)
+        self.sections.setFocusPolicy(Qt.NoFocus)
+        for name in SECTIONS:
+            self.sections.addTab(COMMANDS[f"section-{name}"].label)
+        self.sections.currentChanged.connect(self._section_changed)
+        strip = QWidget()
+        strip.setProperty("role", "tabstrip")
+        strip.setAttribute(Qt.WA_StyledBackground, True)
+        strip_row = QHBoxLayout(strip)
+        strip_row.setContentsMargins(10, 4, 10, 0)
+        strip_row.addWidget(self.sections)
+        strip_row.addStretch(1)
+        body = QWidget()
+        body_column = QVBoxLayout(body)
+        body_column.setContentsMargins(0, 0, 0, 0)
+        body_column.setSpacing(0)
+        body_column.addWidget(strip)
+        body_column.addWidget(self.pages, 1)
 
         self._status_left = QLabel()
         self._status_right = QLabel()
@@ -192,7 +234,7 @@ class MainWindow(QMainWindow):
 
         self.menubar = MenuBar(self)
         self.toolbar = ToolBar(self)
-        self.toolbar.set_kind("main")
+        self.toolbar.set_kind("software")
 
         root = QWidget()
         outer = QVBoxLayout(root)
@@ -242,7 +284,47 @@ class MainWindow(QMainWindow):
         return set(self._config.get("ignore.items"))
 
     def busy(self) -> bool:
-        return bool(self._scan_request or self._update_request)
+        """The Software section's jobs. Cleanup and Security have their own."""
+        return bool(self._scan_request or self._update_request or self._uninstall_request
+                    or self._leftover_request)
+
+    # ------------------------------------------------------------- sections
+
+    def section(self) -> str:
+        return SECTIONS[max(0, self.sections.currentIndex())]
+
+    def _page(self):
+        return {"cleanup": self.cleanup, "security": self.security}.get(self.section())
+
+    def show_section(self, name: str) -> None:
+        self.sections.setCurrentIndex(SECTIONS.index(name))
+
+    def _section_changed(self, index: int) -> None:
+        self.pages.setCurrentIndex(index)
+        self.toolbar.set_kind(SECTIONS[index])
+        self.toolbar.apply_tokens(self._tokens)
+        page = self._page()
+        if page is not None:
+            page.activated()
+        self.refresh_chrome()
+
+    # The services the section pages use.
+    def submit(self, fn, *args):
+        return self._loader.submit(fn, *args)
+
+    def cancel(self, request: int) -> None:
+        self._loader.cancel(request)
+
+    def refresh_chrome(self) -> None:
+        # Pages call this from their constructors, before the window is whole.
+        if hasattr(self, "toolbar") and hasattr(self, "updates"):
+            self._refresh_chrome()
+
+    def home_folder(self) -> str:
+        return QDir.toNativeSeparators(QDir.homePath())
+
+    def software_items(self) -> list:
+        return list(self.model.items)
 
     def selected(self) -> list[Item]:
         rows = self.view.selectionModel().selectedRows() if self.view.selectionModel() else []
@@ -273,7 +355,7 @@ class MainWindow(QMainWindow):
         """New rows from what the scan has so far, keeping the selection and
         anything this session already updated."""
         keep = {item.key: item for item in self.model.items
-                if item.status in (Status.DONE, Status.FAILED)}
+                if item.status in (Status.DONE, Status.FAILED, Status.REMOVED)}
         chosen = {item.key for item in self.selected()}
         manufacturer = str(scan.system.get("manufacturer") or "")
         items = inventory.build(
@@ -283,7 +365,8 @@ class MainWindow(QMainWindow):
             vendor_url=oem.support_url(manufacturer))
         for index, item in enumerate(items):
             previous = keep.get(item.key)
-            if previous is not None and item.status == Status.UPDATE:
+            if previous is not None and (item.status == Status.UPDATE
+                                         or previous.status == Status.REMOVED):
                 items[index] = previous
         self.model.set_items(items)
         if chosen:
@@ -317,6 +400,7 @@ class MainWindow(QMainWindow):
             self._rebuild(scan)
             self._show_notices(scan)
             self._find_tools(scan)
+            self.security.refresh_from_inventory()
         if error:
             self.say(f"The scan stopped: {error.splitlines()[0]}")
         if self._scan_started:
@@ -380,6 +464,9 @@ class MainWindow(QMainWindow):
                  "replace a running program."]
         if plan.wu:
             notes.append("Windows Update needs administrator rights: Windows will ask once.")
+        if plan.dev:
+            notes.append("pip and npm packages are upgraded in place; a project pinned to the "
+                         "old version may need it back.")
         if any(step for step in plan.winget):
             notes.append("A program installed for everyone may ask for administrator "
                          "rights itself.")
@@ -399,11 +486,12 @@ class MainWindow(QMainWindow):
         for step in plan.winget:
             self.model.busy[step.key] = "Waiting"
             self.model.changed(step.key)
-        for item in plan.wu:
+        for item in plan.wu + plan.dev:
             self.model.busy[item.key] = "Waiting"
             self.model.changed(item.key)
         self._set_details(True)
-        self.say(f"Updating {len(plan.winget)} with winget, {len(plan.wu)} from Windows Update.")
+        self.say(f"Updating {len(plan.winget)} with winget, {len(plan.wu)} from Windows Update"
+                 + (f", {len(plan.dev)} with pip or npm." if plan.dev else "."))
         self._update_request = self._loader.submit(work.update, plan, settings)
         self._refresh_chrome()
 
@@ -471,11 +559,105 @@ class MainWindow(QMainWindow):
         self._refresh_chrome()
 
     def stop(self) -> None:
-        for request in (self._scan_request, self._update_request):
+        for page in (self.cleanup, self.security):
+            if page.busy():
+                page.stop()
+        for request in (self._scan_request, self._update_request, self._uninstall_request):
             if request:
                 self._loader.cancel(request)
         if self.busy():
             self.say("Stopping...")
+
+    # ------------------------------------------------------------ uninstall
+
+    def uninstall_items(self, items: list[Item]) -> None:
+        chosen = [i for i in items if i.removable]
+        if self.busy():
+            self.flash("Wait for the current job to finish, or press Esc to stop it.")
+            return
+        if not chosen:
+            self.flash("Select installed programs to uninstall. Drivers and Windows updates "
+                       "are not removed from here.")
+            return
+        from app.core import uninstall as rules
+
+        winget_exe = self._scan.winget_path if self._scan else ""
+        rows = []
+        for item in chosen:
+            command = rules.command_for(
+                winget_id=item.winget_id if winget_exe else "", source=item.winget_source,
+                quiet=item.quiet_uninstall, uninstall=item.uninstall,
+                silent=bool(self._config.get("winget.silent")))
+            rows.append((item, [item.name, item.installed,
+                                command.text() if command else "no command recorded"], True))
+        dialog = dialogs.ChecklistDialog(
+            self, title="Uninstall", heading="Uninstall these programs?",
+            note="Each program's own uninstaller runs, one after another; some show their own "
+                 "window or ask for administrator rights. Afterwards you are shown what each "
+                 "one left behind, and choose what to remove.",
+            columns=["Program", "Version", "Command"], rows=rows, accept="Uninstall")
+        if dialog.exec() != QDialog.Accepted:
+            return
+        picked = dialog.chosen()
+        if not picked:
+            return
+        removals = [work.Removal(i.key, i.name, i.publisher, i.location, i.winget_id,
+                                 i.winget_source, i.uninstall, i.quiet_uninstall)
+                    for i in picked]
+        keys = {i.key for i in picked}
+        others = [i.location for i in self.model.items
+                  if i.location and i.key not in keys and i.status != Status.REMOVED]
+        for item in picked:
+            self.model.busy[item.key] = "Waiting"
+            self.model.changed(item.key)
+        self._removals = {i.key: i.name for i in picked}
+        self.say(f"Uninstalling {len(picked)} program(s).")
+        self._uninstall_request = self._loader.submit(
+            work.uninstall, removals, others, winget_exe=winget_exe,
+            silent=bool(self._config.get("winget.silent")),
+            timeout=float(self._config.get("winget.upgrade_timeout")))
+        self._refresh_chrome()
+
+    def _uninstall_event(self, event: tuple) -> None:
+        kind = event[0]
+        if kind == "u-start":
+            _k, key, name, text = event
+            self.model.busy[key] = "Uninstalling..."
+            self.model.changed(key)
+            self.say(f"Uninstalling {name}: {text}")
+        elif kind == "line":
+            if not _is_progress(event[2]):
+                self.log.appendPlainText(f"          {event[2]}")
+        elif kind == "u-done":
+            _k, key, ok, note = event
+            self.model.busy.pop(key, None)
+            item = self.model.item(key)
+            if item is not None:
+                if ok:
+                    item.status = Status.REMOVED
+                item.note = note
+                self.model.changed(key)
+            self.say(f"{self._removals.get(key, key)}: {note}")
+
+    def _uninstall_finished(self, outcome, error: str = "") -> None:
+        self._uninstall_request = 0
+        for key in list(self.model.busy):
+            self.model.busy.pop(key, None)
+            self.model.changed(key)
+        if error:
+            self.say(f"Uninstalling stopped: {error.splitlines()[0]}")
+        self._refresh_chrome()
+        if outcome is None:
+            return
+        for key, found in outcome.leftovers.items():
+            name = self._removals.get(key, key)
+            chosen = dialogs.leftovers(self, name, found)
+            if chosen:
+                self._leftover_request = self._loader.submit(work.remove_leftovers, chosen, name)
+                # One at a time: the next dialog waits for this removal.
+                return
+        if not outcome.leftovers and outcome.done:
+            self.say("Nothing was left behind that could be identified safely.")
 
     # ---------------------------------------------------------------- loader
 
@@ -484,15 +666,38 @@ class MainWindow(QMainWindow):
             self._scan_stage(payload[1], payload[2])
         elif request == self._update_request:
             self._update_event(payload)
+        elif request == self._uninstall_request:
+            self._uninstall_event(payload)
+        else:
+            for page in (self.cleanup, self.security):
+                if page.handle_progress(request, payload):
+                    return
 
     def _finished(self, request: int, envelope) -> None:
         if request == self._scan_request:
             self._scan_finished(envelope.value if envelope.ok else None, envelope.error)
         elif request == self._update_request:
             self._update_finished(envelope.value if envelope.ok else None, envelope.error)
+        elif request == self._uninstall_request:
+            self._uninstall_finished(envelope.value if envelope.ok else None, envelope.error)
+        elif request == self._leftover_request:
+            self._leftover_request = 0
+            if envelope.ok:
+                done, failed = envelope.value
+                self.say(f"Removed {len(done)} leftover(s)"
+                         + (" (folders are in the Recycle Bin)." if done else "."))
+                for path, why in failed.items():
+                    self.say(f"Not removed: {path}: {why}")
+            else:
+                self.say(f"Removing leftovers failed: {envelope.error.splitlines()[0]}")
+            self._refresh_chrome()
         elif request == self._tools_request and envelope.ok:
             self._tools = envelope.value or {}
             self._refresh_chrome()
+        else:
+            for page in (self.cleanup, self.security):
+                if page.handle_finished(request, envelope):
+                    return
 
     # --------------------------------------------------------------- details
 
@@ -537,6 +742,20 @@ class MainWindow(QMainWindow):
                 f"drivers")
 
     def command_state(self, id_: str) -> State:
+        if id_ in SECTION_COMMANDS:
+            return State(checked=self.section() == SECTION_COMMANDS[id_])
+        page = self._page()
+        if page is not None:
+            answer = page.command_state(id_)
+            if answer is not None:
+                return answer
+        if id_ == "stop":
+            busy = self.busy() or any(p.busy() for p in (self.cleanup, self.security))
+            return State(visible=busy)
+        for other in (self.cleanup, self.security):
+            if other is not page and other.command_state(id_) is not None:
+                # Another section's command, from the menu: it switches there.
+                return State()
         if id_ in SHOW_COMMANDS:
             show = SHOW_COMMANDS[id_]
             counts = inventory.counts(self.model.items, self._ignored())
@@ -553,9 +772,11 @@ class MainWindow(QMainWindow):
             n = sum(1 for i in selected if i.updatable)
             return State(enabled=n > 0 and not self.busy(), count=n or None)
         if id_ == "update-all":
-            n = sum(1 for i in self.model.items if i.updatable
-                    and i.key not in self._ignored())
+            n = len(self._all_updatable())
             return State(enabled=n > 0 and not self.busy(), count=n or None)
+        if id_ == "uninstall":
+            n = sum(1 for i in selected if i.removable)
+            return State(enabled=n > 0 and not self.busy())
         if id_ == "select-updates":
             return State(enabled=any(i.updatable for i in self.model.items))
         if id_ == "ignore":
@@ -583,7 +804,33 @@ class MainWindow(QMainWindow):
             return State(enabled=not self.updates.busy())
         return State()
 
+    def _all_updatable(self) -> list[Item]:
+        """What Update all takes: never an ignored row, never an opt-in one."""
+        ignored = self._ignored()
+        return [i for i in self.model.items if i.updatable and not i.opt_in
+                and i.key not in ignored]
+
     def run_command(self, id_: str) -> None:
+        if id_ in SECTION_COMMANDS:
+            self.show_section(SECTION_COMMANDS[id_])
+            return
+        page = self._page()
+        if id_ == "stop":
+            self.stop()
+            self._refresh_chrome()
+            return
+        if page is not None and page.command_state(id_) is not None:
+            if page.command_state(id_).enabled:
+                page.run_command(id_)
+            self._refresh_chrome()
+            return
+        for other, name in ((self.cleanup, "cleanup"), (self.security, "security")):
+            if other is not page and other.command_state(id_) is not None:
+                self.show_section(name)
+                if other.command_state(id_).enabled:
+                    other.run_command(id_)
+                self._refresh_chrome()
+                return
         if not self.command_state(id_).enabled and id_ not in SHOW_COMMANDS:
             return
         if id_ in SHOW_COMMANDS:
@@ -604,9 +851,8 @@ class MainWindow(QMainWindow):
                 "export": self.export,
                 "exit": self.close,
                 "update-selected": lambda: self.update_items(self.selected()),
-                "update-all": lambda: self.update_items(
-                    [i for i in self.model.items if i.updatable
-                     and i.key not in self._ignored()]),
+                "update-all": lambda: self.update_items(self._all_updatable()),
+                "uninstall": lambda: self.uninstall_items(self.selected()),
                 "select-updates": self.select_updates,
                 "ignore": lambda: self._ignore(True),
                 "unignore": lambda: self._ignore(False),
@@ -741,7 +987,8 @@ class MainWindow(QMainWindow):
 
     def _context_menu(self, at: QPoint) -> None:
         menu = QMenu(self)
-        for id_ in ("update-selected", "copy-command", "-", "ignore", "unignore", "-", "vendor"):
+        for id_ in ("update-selected", "uninstall", "copy-command", "-", "ignore", "unignore",
+                    "-", "vendor"):
             if id_ == "-":
                 menu.addSeparator()
                 continue
@@ -757,7 +1004,7 @@ class MainWindow(QMainWindow):
             if not command.key or id_ in ("exit",):
                 continue
             shortcut = QShortcut(QKeySequence(command.key), self)
-            if id_ in ("copy-command", "select-updates", "ignore", "unignore"):
+            if id_ in ("copy-command", "select-updates", "ignore", "unignore", "uninstall"):
                 # Keys the filter box also wants: only when the list has focus.
                 shortcut.setContext(Qt.WidgetWithChildrenShortcut)
                 shortcut.setParent(self.view)
@@ -779,6 +1026,9 @@ class MainWindow(QMainWindow):
             self._frame.set_dark(self._is_dark())
         self.toolbar.apply_tokens(self._tokens)
         self.model.set_tokens(self._tokens)
+        for page in (getattr(self, "cleanup", None), getattr(self, "security", None)):
+            if page is not None:
+                page.apply_tokens(self._tokens)
         where = "File Manager's look" if source == "file manager" else "own look"
         self._status_right.setText(
             f"{THEME_LABELS.get(self._tokens['theme_name'], '')}  ·  "
@@ -898,7 +1148,7 @@ class MainWindow(QMainWindow):
         self.activateWindow()
 
     def closeEvent(self, event) -> None:  # noqa: N802
-        if self._update_request:
+        if self._update_request or self._uninstall_request:
             answer = QMessageBox.question(
                 self, "Updates running",
                 "Updates are still running. Stop them and close?",

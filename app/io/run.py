@@ -43,11 +43,18 @@ class Result:
         return self.code == 0 and not (self.timed_out or self.cancelled or self.missing)
 
 
+def system32(name: str) -> str:
+    """A Windows program by its full path, so it is never found by search
+    order -- the current folder comes before System32 in that order."""
+    root = os.environ.get("SystemRoot") or r"C:\Windows"
+    return os.path.join(root, "System32", name) if sys.platform == "win32" else name
+
+
 def _kill_tree(process: subprocess.Popen) -> None:
     if process.poll() is not None:
         return
     if sys.platform == "win32":
-        subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)],
+        subprocess.run([system32("taskkill.exe"), "/F", "/T", "/PID", str(process.pid)],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                        creationflags=CREATE_NO_WINDOW, check=False)
     try:

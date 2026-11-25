@@ -21,12 +21,15 @@ SETTINGS = {
 }
 
 
-def open_target(target: str) -> str:
+def open_target(target: str, arguments: str = "") -> str:
     """Open a URL, a settings page or a program. "" on success, else why not."""
     if sys.platform != "win32":
         return "Opening things is only available on Windows."
     try:
-        os.startfile(target)  # noqa: S606 - a user's click, a known target
+        if arguments:
+            os.startfile(target, "open", arguments)  # noqa: S606 - a user's click
+        else:
+            os.startfile(target)  # noqa: S606 - a user's click, a known target
         return ""
     except OSError as exc:
         return str(exc)
@@ -53,3 +56,17 @@ def tool_path(tool: Tool) -> str:
 
 def found_tools(tools: list[Tool]) -> dict[str, str]:
     return {tool.name: tool_path(tool) for tool in tools}
+
+
+def reveal(path: str) -> str:
+    """Show a file or folder selected in Explorer."""
+    if sys.platform != "win32":
+        return "Explorer is only available on Windows."
+    import subprocess
+
+    try:
+        root = os.environ.get("SystemRoot") or r"C:\Windows"
+        subprocess.Popen([os.path.join(root, "explorer.exe"), "/select,", os.path.normpath(path)])
+        return ""
+    except OSError as exc:
+        return str(exc)

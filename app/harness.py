@@ -13,6 +13,11 @@ output and its parse compared.
     python -m app.harness system                 manufacturer, model, BIOS
     python -m app.harness registry               the Uninstall entries
     python -m app.harness inventory              every source, merged, as the window shows it
+    python -m app.harness security               the security facts and what was made of them
+    python -m app.harness cleanup                measure every cleanup kind (deletes nothing)
+    python -m app.harness dev                    outdated pip and npm packages
+    python -m app.harness leftovers "Name" "Publisher" "C:\\install\\folder"
+                                                 what an uninstall would offer to remove
 
 Add `--raw` to print what the program wrote before the parse.
 
@@ -113,6 +118,51 @@ def main(argv: list[str]) -> int:
                                                  i.name.lower())):
             print(f"{inventory.STATUS_LABELS[item.status]:<24} {item.kind:<8} "
                   f"{item.name[:48]:<48} {item.installed:<18} {item.available}")
+        return 0
+
+    if command == "security":
+        from app.core import security
+
+        answer = powershell.call(scripts.SECURITY, timeout=120, cancel=cancel)
+        if raw or not answer.ok:
+            print(json.dumps(answer.data, indent=2), answer.error)
+        for finding in security.evaluate(answer.data or {}, today=_dt.date.today()):
+            print(f"{security.LEVEL_LABELS[finding.level]:<10} {finding.title:<28} "
+                  f"{finding.summary}")
+        return 0
+
+    if command == "cleanup":
+        from app.core import cleanup
+        from app.io import cleaner
+
+        for target in cleanup.TARGETS:
+            got = cleaner.measure(target, cancel=cancel)
+            print(f"{target.label:<40} {cleanup.size_text(got.bytes):>10} {got.files:>8,}  "
+                  f"{got.note}  {cleanup.locations(target, cleaner.env())}")
+        return 0
+
+    if command == "dev":
+        from app.io import devtools
+
+        for python in devtools.pythons(cancel):
+            print(f"python {python.tag}: {python.path}")
+        print(f"npm: {devtools.npm_command() or 'not found'}")
+        answer = devtools.outdated(timeout=180, cancel=cancel)
+        for package in answer.value or []:
+            print(f"{package.tool_label:<14} {package.name:<30} {package.current:<12} "
+                  f"{package.latest}")
+        if answer.error:
+            print(answer.error)
+        return 0
+
+    if command == "leftovers":
+        from app.io import uninstaller
+
+        name, publisher, location = (argv[1:] + ["", "", ""])[:3]
+        found = uninstaller.leftovers(name=name, publisher=publisher, location=location,
+                                      others=[])
+        for item in found.folders + found.keys:
+            print(f"{item.path:<70} {item.why}")
         return 0
 
     print(f"unknown command {command!r}")

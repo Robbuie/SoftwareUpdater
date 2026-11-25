@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 
-from app.core import drivers, winget, winupdate
+from app.core import devtools, drivers, winget, winupdate
 from app.core.inventory import Installed, Sources
 from app.core.scan import Scan
 
@@ -38,7 +38,19 @@ def sources() -> Sources:
         winget_upgrades=winget.rows(text("winget", "upgrade.txt")),
         drivers=drivers.group(drivers.devices(payload("ps", "drivers.json")["drivers"])),
         offers=winupdate.offers(payload("ps", "windows-update.json")["updates"]),
+        dev=dev(),
     )
+
+
+def dev() -> list:
+    pythons = devtools.interpreters(text("ps", "py-launcher.txt"))
+    packages = devtools.pip_outdated(text("ps", "pip-outdated.json"), pythons[0])
+    return packages + devtools.npm_outdated(text("ps", "npm-outdated.json"),
+                                            r"C:\Program Files\nodejs\npm.cmd")
+
+
+def security() -> dict:
+    return payload("ps", "security.json")
 
 
 def scan() -> Scan:

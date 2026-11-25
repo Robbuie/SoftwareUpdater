@@ -35,6 +35,7 @@ class Stage:
     WINGET = "winget"
     DRIVERS = "drivers"
     WINDOWS_UPDATE = "windows-update"
+    DEV = "dev"
 
 
 STAGE_LABELS = {
@@ -43,6 +44,7 @@ STAGE_LABELS = {
     Stage.WINGET: "winget",
     Stage.DRIVERS: "Drivers",
     Stage.WINDOWS_UPDATE: "Windows Update",
+    Stage.DEV: "pip and npm",
 }
 
 
@@ -51,6 +53,7 @@ class Options:
     winget: bool = True
     drivers: bool = True
     windows_update: bool = True
+    dev: bool = True
     include_unknown: bool = True
     wu_server: str = "windows-update"
     winget_timeout: float = 180.0
@@ -79,6 +82,7 @@ class Probe(Protocol):
     def drivers(self, timeout: float, cancel: threading.Event) -> Answer: ...  # noqa: E704
     def windows_update(self, server: str, timeout: float,  # noqa: E704
                        cancel: threading.Event) -> Answer: ...
+    def dev(self, timeout: float, cancel: threading.Event) -> Answer: ...  # noqa: E704
 
 
 @dataclass
@@ -154,6 +158,14 @@ def run(probe: Probe, options: Options, *, cancel: threading.Event | None = None
             scan.sources.offers = winupdate.offers(payload)
         done(Stage.WINDOWS_UPDATE, answer.seconds, "" if answer.ok else answer.error)
 
+    def dev() -> None:
+        answer = probe.dev(options.winget_timeout, cancel)
+        if answer.ok:
+            scan.sources.dev = list(answer.value or [])
+        # A partial answer (one Python's pip failed) is still an answer, and
+        # what failed is still worth saying.
+        done(Stage.DEV, answer.seconds, answer.error)
+
     jobs: list[Callable[[], None]] = [system, registry]
     if options.winget:
         jobs.append(winget)
@@ -161,6 +173,8 @@ def run(probe: Probe, options: Options, *, cancel: threading.Event | None = None
         jobs.append(drivers)
     if options.windows_update:
         jobs.append(windows_update)
+    if options.dev:
+        jobs.append(dev)
     with ThreadPoolExecutor(max_workers=len(jobs), thread_name_prefix="scan") as pool:
         for future in [pool.submit(job) for job in jobs]:
             future.result()
@@ -176,4 +190,6 @@ def stages(options: Options) -> list[str]:
         out.append(Stage.DRIVERS)
     if options.windows_update:
         out.append(Stage.WINDOWS_UPDATE)
+    if options.dev:
+        out.append(Stage.DEV)
     return out

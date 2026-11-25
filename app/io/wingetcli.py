@@ -60,3 +60,9 @@ def upgrade(exe: str, package_id: str, *, timeout: float, silent: bool,
     args = winget.upgrade_args(package_id, silent=silent, unknown_version=unknown_version,
                                source=source)
     return _run.run([exe, *args], timeout=timeout, cancel=cancel, on_line=on_line, env=ENV)
+
+
+def uninstall(exe: str, args: list[str], *, timeout: float,
+              cancel: threading.Event | None = None,
+              on_line: Callable[[str], None] | None = None) -> _run.Result:
+    return _run.run([exe, *args], timeout=timeout, cancel=cancel, on_line=on_line, env=ENV)

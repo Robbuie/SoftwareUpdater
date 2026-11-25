@@ -59,6 +59,11 @@ class Probe:
     def drivers(self, timeout: float, cancel: threading.Event) -> Answer:
         return _from(powershell.call(scripts.DRIVERS, timeout=timeout, cancel=cancel))
 
+    def dev(self, timeout: float, cancel: threading.Event) -> Answer:
+        from app.io import devtools
+
+        return devtools.outdated(timeout=timeout, cancel=cancel)
+
     def windows_update(self, server: str, timeout: float, cancel: threading.Event) -> Answer:
         script = scripts.fill(scripts.WU_SEARCH, server=server)
         return _from(powershell.call(script, timeout=timeout, cancel=cancel), winupdate.explain)

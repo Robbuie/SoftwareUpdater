@@ -88,6 +88,7 @@ def entries() -> list[Installed]:
                         arch=arch,
                         key=sub,
                         uninstall=_value(handle, "UninstallString"),
+                        quiet_uninstall=_value(handle, "QuietUninstallString"),
                     )
                 # The 64- and 32-bit views are the same key on a 32-bit
                 # machine; an entry is kept once.

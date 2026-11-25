@@ -59,6 +59,14 @@ COMMANDS: dict[str, Command] = {c.id: c for c in (
        "Save what this scan found as an HTML or CSV file (Ctrl+Shift+H)"),
     _c("exit", "Exit", "Alt+F4"),
 
+    # Sections (0.2): one strip of tabs under the command row.
+    _c("section-software", "Software", "Alt+1", "upgrade", "Software",
+       "Updates and uninstalling (Alt+1)", checkable=True),
+    _c("section-cleanup", "Cleanup", "Alt+2", "broom", "Cleanup",
+       "Temporary files, caches and big folders (Alt+2)", checkable=True),
+    _c("section-security", "Security", "Alt+3", "shield", "Security",
+       "This computer's protections (Alt+3)", checkable=True),
+
     # Update
     _c("update-selected", "Update selected", "Ctrl+U", "upgrade", "Update",
        "Update the selected rows (Ctrl+U)"),
@@ -66,6 +74,8 @@ COMMANDS: dict[str, Command] = {c.id: c for c in (
        "Update all", "Update every row that has an update this application can install "
                      "(Ctrl+Shift+U)"),
     _c("select-updates", "Select every update", "Ctrl+A"),
+    _c("uninstall", "Uninstall...", "Ctrl+Delete", "trash", "Uninstall",
+       "Remove the selected programs, then offer what they left behind (Ctrl+Delete)"),
     _c("ignore", "Ignore", "Delete", "ignore", "Ignore",
        "Stop showing the selected rows; View > Ignored brings them back (Delete)"),
     _c("unignore", "Show again", "Insert", "", "", "Stop ignoring the selected rows (Insert)"),
@@ -89,7 +99,9 @@ COMMANDS: dict[str, Command] = {c.id: c for c in (
        checkable=True),
     _c("show-windows", "Windows updates", "Ctrl+5", "", "Windows",
        "What Windows Update offers besides drivers (Ctrl+5)", checkable=True),
-    _c("show-ignored", "Ignored", "Ctrl+6", "", "Ignored", "Rows you chose to ignore (Ctrl+6)",
+    _c("show-dev", "Developer packages", "Ctrl+6", "", "Dev",
+       "Outdated pip and npm packages (Ctrl+6)", checkable=True),
+    _c("show-ignored", "Ignored", "Ctrl+7", "", "Ignored", "Rows you chose to ignore (Ctrl+7)",
        checkable=True),
     _c("details", "Details panel", "Ctrl+D", "outline", "", "", checkable=True),
     _c("filter", "Filter...", "Ctrl+F", "search", "", "Find a row by name, id or version"),
@@ -99,6 +111,7 @@ COMMANDS: dict[str, Command] = {c.id: c for c in (
     _c("src-winget", "Ask winget about applications", "", "", "", "", checkable=True),
     _c("src-drivers", "List installed drivers", "", "", "", "", checkable=True),
     _c("src-wu", "Ask Windows Update", "", "", "", "", checkable=True),
+    _c("src-dev", "Ask pip and npm", "", "", "", "", checkable=True),
     _c("wu-direct", "Ask Microsoft's Windows Update directly", "", "", "",
        "Bypass a WSUS or Intune server that approves no drivers. Policy can forbid this.",
        checkable=True),
@@ -111,6 +124,25 @@ COMMANDS: dict[str, Command] = {c.id: c for c in (
     _c("scan-on-launch", "Scan when the window opens", "", "", "", "", checkable=True),
     _c("updates-on-launch", "Check for a new Software Updater on launch", "", "", "", "",
        checkable=True),
+
+    # Cleanup (0.2)
+    _c("clean-targets", "Clean up", "", "", "Clean up", "Temporary files and caches by kind",
+       checkable=True),
+    _c("clean-space", "Find space", "", "", "Find space",
+       "What takes the space in a folder, and forgotten downloads", checkable=True),
+    _c("clean-measure", "Measure", "", "refresh", "Measure", "Measure every kind again"),
+    _c("clean-run", "Clean ticked", "", "broom", "Clean",
+       "Remove the ticked kinds of files"),
+    _c("space-scan", "Look in folder", "", "search", "Look", "Add up the folder's sizes"),
+    _c("space-recycle", "Send to Recycle Bin", "", "trash", "Recycle",
+       "Send the selected folders or files to the Recycle Bin"),
+    _c("space-reveal", "Show in Explorer", "", "folder", "Show",
+       "Open the selected item in Explorer"),
+
+    # Security (0.2)
+    _c("sec-check", "Check again", "", "refresh", "Check", "Run every check again"),
+    _c("sec-fix", "Fix", "", "shield", "Fix",
+       "Open the Windows page where this is set"),
 
     # Help
     _c("keys", "Keys", "F1"),
@@ -128,17 +160,27 @@ DYNAMIC = {
     "old-years": "Call a driver old after",
 }
 
+#: Which section owns which command. A command not listed is the window's.
+SECTIONS = ("software", "cleanup", "security")
+SECTION_COMMANDS = {"section-software": "software", "section-cleanup": "cleanup",
+                    "section-security": "security"}
+
 #: The menu bar: (title, items). An item is a command id, "-" for a
 #: separator, or ">name" for a submenu from DYNAMIC.
 MENUS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("&Scan", ("scan", "stop", "-", "export", "-", "exit")),
-    ("&Update", ("update-selected", "update-all", "-", "select-updates", "copy-command", "-",
-                 "ignore", "unignore", "-", "vendor", "device-manager", "wu-settings",
-                 "wu-optional", "apps-settings")),
-    ("&View", ("show-updates", "show-all", "show-apps", "show-drivers", "show-windows",
-               "show-ignored", "-", "filter", "details", "-",
+    ("&Software", ("update-selected", "update-all", "-", "uninstall", "-", "select-updates",
+                   "copy-command", "-", "ignore", "unignore", "-", "vendor", "device-manager",
+                   "wu-settings", "wu-optional", "apps-settings")),
+    ("&Cleanup", ("clean-targets", "clean-space", "-", "clean-measure", "clean-run", "-",
+                  "space-scan", "space-recycle", "space-reveal")),
+    ("Securit&y", ("sec-check", "sec-fix")),
+    ("&View", ("section-software", "section-cleanup", "section-security", "-",
+               "show-updates", "show-all", "show-apps", "show-drivers", "show-windows",
+               "show-dev", "show-ignored", "-", "filter", "details", "-",
                ">theme", ">accent", ">density", "follow-look")),
-    ("&Tools", ("src-winget", "src-drivers", "src-wu", "-", "wu-direct", "include-unknown",
+    ("&Tools", ("src-winget", "src-drivers", "src-wu", "src-dev", "-", "wu-direct",
+                "include-unknown",
                 "include-inbox", ">old-years", "-", "silent", "-", "scan-on-launch",
                 "updates-on-launch")),
     ("H&elp", ("keys", "open-log", "-", "check-updates", "about")),
@@ -153,13 +195,20 @@ ICONS = "."
 MARKERS = (SEGMENTED, STRETCH, ICONS)
 
 TOOLBARS: dict[str, tuple[tuple[str, ...], ...]] = {
-    "main": ((SEGMENTED, "show-updates", "show-all", "show-apps", "show-drivers",
-              "show-windows", "show-ignored"),
-             ("update-selected", "update-all"),
-             (STRETCH,),
-             ("ignore", "vendor"),
-             ("export",),
-             ("stop", "scan")),
+    "software": ((SEGMENTED, "show-updates", "show-all", "show-apps", "show-drivers",
+                  "show-windows", "show-dev"),
+                 ("update-selected", "update-all", "uninstall"),
+                 (STRETCH,),
+                 ("ignore", "vendor"),
+                 (ICONS, "export"),
+                 ("stop", "scan")),
+    "cleanup": ((SEGMENTED, "clean-targets", "clean-space"),
+                ("clean-measure", "clean-run", "space-scan", "space-recycle", "space-reveal"),
+                (STRETCH,),
+                ("stop",)),
+    "security": (("sec-check", "sec-fix"),
+                 (STRETCH,),
+                 ("stop",)),
 }
 
 #: The menus behind the toolbar's arrows: a tuple of ids, or a DYNAMIC name.
@@ -171,7 +220,8 @@ TOOL_MENUS: dict[str, tuple[str, ...] | str] = {
 #: The View filter each show command picks.
 SHOW_COMMANDS = {
     "show-updates": "updates", "show-all": "all", "show-apps": "apps",
-    "show-drivers": "drivers", "show-windows": "windows", "show-ignored": "ignored",
+    "show-drivers": "drivers", "show-windows": "windows", "show-dev": "dev",
+    "show-ignored": "ignored",
 }
 
 #: Tools menu toggles and the setting each one is.
@@ -179,6 +229,7 @@ TOGGLES = {
     "src-winget": "scan.winget",
     "src-drivers": "scan.drivers",
     "src-wu": "scan.windows_update",
+    "src-dev": "scan.dev",
     "include-unknown": "winget.include_unknown",
     "include-inbox": "drivers.include_inbox",
     "silent": "winget.silent",

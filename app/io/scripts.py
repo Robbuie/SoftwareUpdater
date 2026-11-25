@@ -76,6 +76,87 @@ try {
 }
 """
 
+#: Facts for the Security page (`core/security.py` judges them). Read-only,
+#: and runs without administrator rights: every fact is fetched on its own so
+#: one that is refused leaves the rest. Secrets are never read -- for
+#: automatic sign-in, only whether a stored password *exists* is asked.
+SECURITY = PRELUDE + """\
+$f = [ordered]@{}
+function Fact($name, [scriptblock]$block) {
+  try { $f[$name] = & $block } catch { $f[$name + 'Error'] = $_.Exception.Message }
+}
+function Reg($path, $name) {
+  try { (Get-ItemProperty -LiteralPath $path -Name $name -ErrorAction Stop).$name } catch { $null }
+}
+Fact 'os' {
+  $cv = 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion'
+  @{ caption = (Get-CimInstance Win32_OperatingSystem).Caption
+     build = [int](Reg $cv 'CurrentBuildNumber'); ubr = [int](Reg $cv 'UBR')
+     displayVersion = (Reg $cv 'DisplayVersion'); edition = (Reg $cv 'EditionID') }
+}
+Fact 'defender' {
+  $s = Get-MpComputerStatus
+  @{ enabled = [bool]$s.AntivirusEnabled; realtime = [bool]$s.RealTimeProtectionEnabled
+     service = [bool]$s.AMServiceEnabled; signatureAge = [int]$s.AntivirusSignatureAge
+     tamper = [bool]$s.IsTamperProtected; version = [string]$s.AntivirusSignatureVersion }
+}
+Fact 'antivirus' {
+  @(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct |
+    ForEach-Object { [string]$_.displayName })
+}
+Fact 'firewall' {
+  @(Get-NetFirewallProfile -PolicyStore ActiveStore |
+    ForEach-Object { @{ name = [string]$_.Name; enabled = ([string]$_.Enabled -eq 'True') } })
+}
+Fact 'bitlocker' {
+  $shell = New-Object -ComObject Shell.Application
+  [int]$shell.NameSpace("$env:SystemDrive\\").Self.ExtendedProperty('System.Volume.BitLockerProtection')
+}
+Fact 'secureBoot' { Reg 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecureBoot\\State' 'UEFISecureBootEnabled' }
+Fact 'uac' {
+  $p = 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System'
+  @{ enableLua = (Reg $p 'EnableLUA'); consentAdmin = (Reg $p 'ConsentPromptBehaviorAdmin')
+     secureDesktop = (Reg $p 'PromptOnSecureDesktop') }
+}
+Fact 'smb1' {
+  @{ clientStart = (Reg 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\mrxsmb10' 'Start')
+     server = (Reg 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters' 'SMB1') }
+}
+Fact 'rdp' {
+  @{ deny = (Reg 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server' 'fDenyTSConnections')
+     nla = (Reg 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server\\WinStations\\RDP-Tcp' 'UserAuthentication') }
+}
+Fact 'lsa' { Reg 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa' 'RunAsPPL' }
+Fact 'wdigest' { Reg 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\WDigest' 'UseLogonCredential' }
+Fact 'autologon' {
+  $w = 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon'
+  @{ enabled = [string](Reg $w 'AutoAdminLogon')
+     storedPassword = ((Get-Item -LiteralPath $w).Property -contains 'DefaultPassword') }
+}
+Fact 'admins' {
+  @(Get-LocalGroupMember -SID 'S-1-5-32-544' -ErrorAction Stop | ForEach-Object { [string]$_.Name })
+}
+Fact 'userIsAdmin' {
+  [bool]([Security.Principal.WindowsIdentity]::GetCurrent().Groups |
+    Where-Object { $_.Value -eq 'S-1-5-32-544' })
+}
+Fact 'guest' {
+  $g = Get-LocalUser | Where-Object { $_.SID.Value -like '*-501' } | Select-Object -First 1
+  [bool]($g -and $g.Enabled)
+}
+Fact 'pendingReboot' {
+  (Test-Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired') -or
+  (Test-Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\RebootPending')
+}
+Fact 'lastPatch' {
+  $h = Get-HotFix | Where-Object { $_.InstalledOn } | Sort-Object InstalledOn -Descending |
+    Select-Object -First 1
+  if ($h) { $h.InstalledOn.ToString('yyyy-MM-dd') } else { '' }
+}
+Fact 'updateService' { [string](Get-Service -Name wuauserv).StartType }
+[pscustomobject]$f | ConvertTo-Json -Depth 5 -Compress
+"""
+
 #: Search the Windows Update Agent for everything not installed and not
 #: hidden. Searching needs no administrator rights; installing does.
 WU_SEARCH = PRELUDE + """\
@@ -115,17 +196,28 @@ try {
 }
 """
 
-#: Run elevated. Reads the chosen update ids from a request file, searches
-#: again (an update object cannot cross processes), downloads and installs
-#: those, and writes the outcome to a result file -- standard output of an
-#: elevated process is not ours to read.
-WU_INSTALL = PRELUDE + """\
-$resultPath = __RESULT__
+#: Elevated scripts (`io/elevated.py`) get the result file's path as
+#: $args[0] and write one JSON object there; their data is written into the
+#: script text with `embed`, so the hash that guards the script covers it.
+RESULT = """\
+$resultPath = $args[0]
 function Write-Result($obj) {
+  # Written as administrator: never through a folder that has become a link,
+  # and never over a file that already exists.
+  $dir = Split-Path -LiteralPath $resultPath
+  foreach ($d in @($dir, (Split-Path -LiteralPath $dir))) {
+    if ((Get-Item -LiteralPath $d -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { return }
+  }
+  if (Test-Path -LiteralPath $resultPath) { return }
   $obj | ConvertTo-Json -Depth 5 -Compress | Set-Content -LiteralPath $resultPath -Encoding UTF8
 }
+"""
+
+#: Run elevated. Searches again for the chosen update ids (an update object
+#: cannot cross processes), downloads and installs those.
+WU_INSTALL = PRELUDE + RESULT + """\
 try {
-  $request = Get-Content -LiteralPath __REQUEST__ -Raw -Encoding UTF8 | ConvertFrom-Json
+  $request = __REQUEST__
   $session = New-Object -ComObject Microsoft.Update.Session
   $session.ClientApplicationID = 'Software Updater'
   $searcher = $session.CreateUpdateSearcher()
@@ -163,8 +255,85 @@ try {
 }
 """
 
-#: Runs a script file by reading it, which execution policy does not govern.
-RUN_FILE = "& ([scriptblock]::Create((Get-Content -LiteralPath __PATH__ -Raw -Encoding UTF8)))\n"
+#: Run elevated: the system-wide cleanup targets. `__REQUEST__` is
+#: {targets: [{id, method, paths, days, pattern}]}. Every path is checked
+#: against the system folders below before anything is deleted, links are
+#: never followed, and files in use are skipped.
+CLEAN = PRELUDE + RESULT + """\
+$request = __REQUEST__
+$allowed = @(
+  (Join-Path $env:SystemRoot 'Temp'),
+  (Join-Path $env:SystemRoot 'Minidump'),
+  (Join-Path $env:SystemRoot 'SoftwareDistribution\\Download'),
+  (Join-Path $env:ProgramData 'Microsoft\\Windows\\WER')
+)
+function Test-Allowed($path) {
+  $full = [IO.Path]::GetFullPath($path).TrimEnd('\\')
+  foreach ($root in $allowed) {
+    if ($full -eq $root -or $full.StartsWith($root + '\\', [StringComparison]::OrdinalIgnoreCase)) { return $true }
+  }
+  return $false
+}
+function Remove-Old($root, $days, $pattern) {
+  $r = @{ bytes = 0; files = 0; skipped = 0 }
+  if (-not (Test-Path -LiteralPath $root)) { return $r }
+  $limit = (Get-Date).AddDays(-[double]$days)
+  $stack = New-Object System.Collections.Stack
+  $stack.Push($root)
+  while ($stack.Count -gt 0) {
+    $dir = $stack.Pop()
+    try { $entries = [IO.Directory]::GetFileSystemEntries($dir) } catch { continue }
+    foreach ($e in $entries) {
+      try { $info = Get-Item -LiteralPath $e -Force -ErrorAction Stop } catch { $r.skipped++; continue }
+      if ($info.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+      if ($info.PSIsContainer) { $stack.Push($e); continue }
+      if ([double]$days -gt 0 -and $info.LastWriteTime -gt $limit) { continue }
+      if ($pattern -and -not ($info.Name -like $pattern)) { continue }
+      $len = $info.Length
+      try { Remove-Item -LiteralPath $e -Force -ErrorAction Stop; $r.bytes += $len; $r.files++ }
+      catch { $r.skipped++ }
+    }
+  }
+  return $r
+}
+function Free-Bytes() { (Get-PSDrive -Name $env:SystemDrive.TrimEnd(':')).Free }
+$results = @()
+foreach ($t in @($request.targets)) {
+  $one = @{ target = $t.id; bytes = 0; files = 0; skipped = 0; error = '' }
+  try {
+    if ($t.method -eq 'files') {
+      foreach ($p in @($t.paths)) {
+        if (-not (Test-Allowed $p)) { $one.error = "Refused: $p"; continue }
+        $r = Remove-Old $p $t.days $t.pattern
+        $one.bytes += $r.bytes; $one.files += $r.files; $one.skipped += $r.skipped
+      }
+    } elseif ($t.method -eq 'delivery') {
+      $before = Free-Bytes
+      Delete-DeliveryOptimizationCache -Force
+      $one.bytes = [math]::Max(0, (Free-Bytes) - $before)
+    } elseif ($t.method -eq 'dism') {
+      $before = Free-Bytes
+      $dism = Join-Path $env:SystemRoot 'System32\\dism.exe'
+      & $dism /Online /Cleanup-Image /StartComponentCleanup /Quiet | Out-Null
+      if ($LASTEXITCODE -ne 0) { $one.error = "DISM exited with $LASTEXITCODE" }
+      $one.bytes = [math]::Max(0, (Free-Bytes) - $before)
+    }
+  } catch { $one.error = $_.Exception.Message }
+  $results += $one
+}
+Write-Result @{ results = $results }
+"""
+
+#: Run elevated: fetch Defender's newest definitions.
+DEFENDER_UPDATE = PRELUDE + RESULT + """\
+try {
+  Update-MpSignature -ErrorAction Stop
+  $s = Get-MpComputerStatus
+  Write-Result @{ ok = $true; version = $s.AntivirusSignatureVersion; age = $s.AntivirusSignatureAge }
+} catch {
+  Write-Result @{ ok = $false; error = $_.Exception.Message }
+}
+"""
 
 
 def quote(value: str) -> str:
@@ -174,6 +343,17 @@ def quote(value: str) -> str:
 
 
 def fill(script: str, **values: str) -> str:
+    """Put quoted string values in for `__NAME__` placeholders."""
     for name, value in values.items():
         script = script.replace(f"__{name.upper()}__", quote(value))
+    return script
+
+
+def embed(script: str, **values) -> str:
+    """Put JSON values in, as PowerShell objects, for `__NAME__` placeholders."""
+    import json
+
+    for name, value in values.items():
+        expression = f"({quote(json.dumps(value))} | ConvertFrom-Json)"
+        script = script.replace(f"__{name.upper()}__", expression)
     return script

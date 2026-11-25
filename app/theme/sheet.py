@@ -490,6 +490,19 @@ QPushButton[role="recent"] {{
     font-family: {mono};
 }}
 QPushButton[role="recent"]:hover {{ background: {bg_3}; color: {txt_0}; }}
+
+/* Software Updater (0.2): boxes in lists -- the cleanup kinds, the
+   uninstall and leftover checklists -- drawn like QCheckBox's, which a
+   list's indicator otherwise is not, and so an unticked one was invisible. */
+QTreeView::indicator {{
+    width: 13px;
+    height: 13px;
+    border: 1px solid {line};
+    border-radius: 3px;
+    background: {bg_1};
+}}
+QTreeView::indicator:hover {{ border: 1px solid {accent_line}; }}
+QTreeView::indicator:checked {{ background: {accent}; border: 1px solid {accent}; }}
 """
 
 

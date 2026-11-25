@@ -27,11 +27,23 @@ same refusal to freeze while something slow is being asked.
   driver page when the tool is not installed, for BIOS and firmware.
 - **Ignore** rows you do not want to hear about; **filter** by name, id or
   version; **export** an HTML or CSV report.
+- **Uninstall** (Ctrl+Delete): runs the program's uninstaller, then lists
+  what it left behind for you to remove (folders to the Recycle Bin,
+  registry keys backed up first).
+- **Cleanup** (Alt+2): temp files, crash dumps, caches, Windows Update
+  leftovers and developer caches, measured, ticked and cleaned; **Find
+  space** shows which folders are big and what is forgotten in Downloads.
+- **Security** (Alt+3): checks antivirus, firewall, BitLocker, Secure Boot,
+  UAC, SMBv1, Remote Desktop, accounts, patch level and Windows support,
+  with a button to the Windows page that fixes each one.
+- **pip and npm** packages that are out of date (Dev), updated one at a
+  time when ticked.
 - `SoftwareUpdater --report out.html` scans without a window and exits 0
   (nothing to do), 1 (something to do) or 2 (the scan failed).
 
 Every source runs off the window's thread with a timeout; Esc stops a scan
-or an update run.
+or an update run. SECURITY.md is the review of what the application itself
+is trusted with and how that is guarded.
 
 ## Running
 

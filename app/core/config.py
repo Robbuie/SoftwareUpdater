@@ -45,6 +45,8 @@ DEFAULTS: dict[str, Any] = {
     "scan.winget": True,
     "scan.drivers": True,
     "scan.windows_update": True,
+    # 0.2: outdated pip packages (every Python found) and global npm packages.
+    "scan.dev": True,
 
     # List packages whose installed version winget cannot read, and upgrade
     # them when asked. winget leaves them out unless told.
@@ -144,6 +146,7 @@ def scan_options(config: Config):
         winget=bool(config.get("scan.winget")),
         drivers=bool(config.get("scan.drivers")),
         windows_update=bool(config.get("scan.windows_update")),
+        dev=bool(config.get("scan.dev")),
         include_unknown=bool(config.get("winget.include_unknown")),
         wu_server=str(config.get("wu.server")),
         winget_timeout=float(config.get("winget.timeout")),

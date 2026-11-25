@@ -1,0 +1,4 @@
+{
+  "typescript": {"current": "5.4.5", "wanted": "5.4.5", "latest": "5.9.3", "dependent": "global", "location": "C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\typescript"},
+  "npm": {"current": "10.8.2", "wanted": "10.8.2", "latest": "11.6.2", "dependent": "global", "location": "x"}
+}

@@ -25,6 +25,7 @@ ERROR_CANCELLED = 1223
 SEE_MASK_NOCLOSEPROCESS = 0x00000040
 SEE_MASK_NO_CONSOLE = 0x00008000
 SW_HIDE = 0
+SW_SHOWNORMAL = 1
 WAIT_TIMEOUT = 0x102
 
 
@@ -39,7 +40,13 @@ class Elevated:
 
 
 def run(executable: str, parameters: str, *, timeout: float,
-        cancel: threading.Event | None = None) -> Elevated:
+        cancel: threading.Event | None = None, verb: str = "runas",
+        show: bool = False) -> Elevated:
+    """Start `executable` through ShellExecuteEx and wait for it.
+
+    `verb="runas"` asks for administrator rights. `verb="open"` starts it as
+    the user and lets its own manifest decide -- which is how an uninstaller
+    that needs rights gets a UAC prompt instead of failing."""
     if sys.platform != "win32":
         return Elevated(False, error="Elevation is only available on Windows.")
     import ctypes
@@ -69,14 +76,14 @@ def run(executable: str, parameters: str, *, timeout: float,
     info = SHELLEXECUTEINFOW()
     info.cbSize = ctypes.sizeof(info)
     info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NO_CONSOLE
-    info.lpVerb = "runas"
+    info.lpVerb = verb
     info.lpFile = executable
     info.lpParameters = parameters
-    info.nShow = SW_HIDE
+    info.nShow = SW_SHOWNORMAL if show else SW_HIDE
     if not shell32.ShellExecuteExW(ctypes.byref(info)):
         error = ctypes.get_last_error()
         if error == ERROR_CANCELLED:
-            return Elevated(False, declined=True, error="The administrator prompt was declined.")
+            return Elevated(False, declined=True, error="The Windows prompt was declined.")
         return Elevated(False, error=f"Could not start as administrator (error {error}).")
     handle = info.hProcess
     if not handle:

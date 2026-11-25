@@ -1,0 +1,65 @@
+{
+ "os": {
+  "caption": "Microsoft Windows 11 Enterprise",
+  "build": 26100,
+  "ubr": 7171,
+  "displayVersion": "24H2",
+  "edition": "Enterprise"
+ },
+ "defender": {
+  "enabled": true,
+  "realtime": true,
+  "service": true,
+  "signatureAge": 6,
+  "tamper": true,
+  "version": "1.441.120.0"
+ },
+ "antivirus": [
+  "Windows Defender"
+ ],
+ "firewall": [
+  {
+   "name": "Domain",
+   "enabled": true
+  },
+  {
+   "name": "Private",
+   "enabled": true
+  },
+  {
+   "name": "Public",
+   "enabled": false
+  }
+ ],
+ "bitlocker": 1,
+ "secureBoot": 1,
+ "uac": {
+  "enableLua": 1,
+  "consentAdmin": 5,
+  "secureDesktop": 1
+ },
+ "smb1": {
+  "clientStart": 4,
+  "server": null
+ },
+ "rdp": {
+  "deny": 0,
+  "nla": 1
+ },
+ "lsa": null,
+ "wdigest": null,
+ "autologon": {
+  "enabled": "0",
+  "storedPassword": false
+ },
+ "admins": [
+  "ENC-PF\\Administrator",
+  "ENCORE\\Domain Admins",
+  "ENCORE\\rokray"
+ ],
+ "userIsAdmin": true,
+ "guest": false,
+ "pendingReboot": true,
+ "lastPatch": "2026-11-12",
+ "updateService": "Manual"
+}

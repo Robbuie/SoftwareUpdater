@@ -6,7 +6,10 @@ Guidance for Claude Code when working in this repository.
 
 **Software Updater** -- a Windows tool that lists what is installed on this
 machine, applications and drivers, says which of them are out of date, and
-updates the ones it can with one click. Python + PySide6. Personal use,
+updates the ones it can with one click. Since 0.2 it also uninstalls (with
+leftovers), cleans temp files and caches, finds where disk space went, and
+checks the machine's security settings: three sections, Software, Cleanup
+and Security. Python + PySide6. Personal use,
 single user. Repo: `Robbuie/SoftwareUpdater` (public, for the same reason as
 the others -- see Packaging). Local path
 `C:\Users\Rokray.ENCORE\Projects\SoftwareUpdater`.
@@ -99,17 +102,33 @@ loader, is the one marked exception).
 `loader.py`, `work.py`, `updates.py` and `instance.py` takes data and returns
 data. That is the part Claude can prove.
 
-**3. Nothing is installed without the user choosing it**, row by row or with
+**3. Nothing is deleted that is not provably disposable or picked by the
+user, and nothing picked is deleted outright.** Cleanup locations come only
+from `core/cleanup.TARGETS` and are dropped if they resolve somewhere
+dangerous (`dangerous_root`); the space finder and leftover removal recycle,
+and are re-checked in the worker (`may_recycle`, `safe_leftover`). Links are
+never followed, network paths never touched. See SECURITY.md before changing
+`io/files.py`, `io/elevated.py`, `core/cleanup.py` or `core/uninstall.py`.
+
+**4. Everything that runs as administrator goes through `io/elevated.py`.**
+The script is hash-checked by its bootstrap and carries its data inside it.
+Never write a second elevated path.
+
+**5. Nothing is installed without the user choosing it**, row by row or with
 Update all, after a confirmation that lists exactly what will run and what
 will not. There is no background updating.
 
-**4. A source that did not answer is never shown as "up to date".**
+**6. A source that did not answer is never shown as "up to date".**
 `Sources` fields are None when a source failed; the rows it would have judged
 are "Unknown", and the failure is in the notice bar and the log.
 
 ## Architecture
 
-**`app/ui/`** -- the window. `window.py` (the one page), `model.py` (table
+**`app/ui/`** -- the window. `window.py` (the frame, the Software section,
+routing commands to the section that owns them), `cleanup.py` and
+`security.py` (the other two sections; each answers `command_state`,
+`run_command`, `handle_progress`, `handle_finished`), `dialogs.py`
+(checklists before anything is removed), `model.py` (table
 model and filter proxy), `commands.py` (every command, the menus, the
 toolbar), and from File Compare verbatim or nearly: `chrome.py`,
 `titlebar.py`, `winframe.py`, `glyphs.py` (Software Updater's glyphs added at
@@ -134,6 +153,18 @@ the end), `colour.py` (File Compare's `parse_colour` and `mono_font`).
   what is left out. Pure.
 - `scan.py` -- every source at once on threads, each reported as it
   arrives, through a `Probe` passed in. Pure apart from the threads.
+- `uninstall.py` (0.2) -- uninstall commands (winget, MSI `/X`, recorded
+  strings split for ShellExecute), leftover candidates and the guards
+  `safe_leftover`, `safe_key`, `runnable`. Pure.
+- `cleanup.py` (0.2) -- the cleanup targets, `expand`, `allowed`,
+  `dangerous_root`, `may_recycle`. Pure.
+- `space.py` (0.2) -- the folder-size tree (depth-capped) and forgotten
+  downloads. Pure.
+- `security.py` (0.2) -- judges the security facts; Windows support dates
+  (`SUPPORT`, from Microsoft's release health page, checked 2026-11-25 --
+  add new versions as they ship). Pure.
+- `devtools.py` (0.2) -- `py -0p`, `pip list --outdated`, `npm outdated -g`
+  parsing and upgrade commands. Pure.
 - `oem.py` -- which maker's tool belongs on this machine and where it
   installs. Pure.
 - `report.py` -- CSV and a self-contained HTML report. Pure.
@@ -157,7 +188,16 @@ the end), `colour.py` (File Compare's `parse_colour` and `mono_font`).
 - `wuinstall.py` -- the elevated install's request and result files, in
   `%ProgramData%\SoftwareUpdater\jobs` so an over-the-shoulder administrator
   account can read and write them.
-- `system.py` -- open a URL, a settings page or a tool; find maker tools.
+- `system.py` -- open a URL, a settings page or a tool; find maker tools;
+  reveal in Explorer.
+- `elevated.py` (0.2) -- the one way to run as administrator: hash-checked
+  bootstrap, data inside the script, result file. `wuinstall.py` uses it.
+- `files.py` (0.2) -- the only module that deletes: link-safe walks,
+  age filters, Recycle Bin, network refusal.
+- `cleaner.py` (0.2) -- measure and clean targets, the elevated cleanup
+  batch, the space scan, Downloads.
+- `uninstaller.py` (0.2) -- run an uninstaller, find and remove leftovers.
+- `devtools.py` (0.2) -- find Pythons and npm, ask them what is outdated.
 
 ## How updating works, and why
 
@@ -207,10 +247,12 @@ Copied from File Compare 1.26.0, which copied File Manager:
 ## Keys
 
 ```
+Alt+1/2/3        Software, Cleanup, Security
+Ctrl+Delete      uninstall selected
 F5               scan again              Esc            stop
 Ctrl+U           update selected         Ctrl+Shift+U   update everything available
 Ctrl+A           select every update     Ctrl+C         copy winget command
-Delete / Insert  ignore / show again     Ctrl+1..6      Updates, All, Apps, Drivers, Windows, Ignored
+Delete / Insert  ignore / show again     Ctrl+1..7      Updates, All, Apps, Drivers, Windows, Dev, Ignored
 Ctrl+F           filter                  Ctrl+D         details panel
 Ctrl+Shift+H     export report           F1             keys
 ```
@@ -266,7 +308,8 @@ change. Bumping a version is three files: `app/__init__.py`, `pyproject.toml`,
 Single user, local. No accounts, no telemetry, nothing about this machine is
 sent anywhere by this application.
 
-**Network use is the point here, so it is spelled out.** The application
+**Network use is the point here, so it is spelled out.** (0.2 adds pip and
+npm, which talk to PyPI and the npm registry when asked what is outdated.) The application
 itself makes one request: the update check for its own releases, as in the
 other apps. Everything else goes through the tools it runs -- winget talks to
 its sources, the Windows Update Agent to Microsoft or the managed server, and
@@ -276,8 +319,11 @@ own code is a new decision, not an extension of these.
 
 ## Build order
 
-0.1 (this): scan, list, filter, ignore, update with winget and Windows
-Update, maker's tool, export, `--report`, harness, preview.
+0.1: scan, list, filter, ignore, update with winget and Windows Update,
+maker's tool, export, `--report`, harness, preview.
+
+0.2 (this): uninstall with leftovers, Cleanup, Find space, Security, pip and
+npm, security review (SECURITY.md).
 
 Candidates after the user has run 0.1 on the real machine:
 

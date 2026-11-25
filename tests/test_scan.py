@@ -35,6 +35,9 @@ class Fake:
     def drivers(self, timeout, cancel):
         return Answer(True, sample.payload("ps", "drivers.json"))
 
+    def dev(self, timeout, cancel):
+        return Answer(True, sample.dev())
+
     def windows_update(self, server, timeout, cancel):
         if self._wu_error:
             return Answer(False, error=self._wu_error)
@@ -51,7 +54,8 @@ def test_every_stage_reports_once():
 
     scan = run(Fake(), Options(), report=report)
     assert sorted(seen) == sorted([Stage.SYSTEM, Stage.REGISTRY, Stage.WINGET, Stage.DRIVERS,
-                                   Stage.WINDOWS_UPDATE])
+                                   Stage.WINDOWS_UPDATE, Stage.DEV])
+    assert len(scan.sources.dev) == 4
     assert scan.sources.winget_upgrades and scan.sources.drivers and scan.sources.offers
     assert scan.system["manufacturer"] == "Dell Inc."
     assert not scan.errors
@@ -66,16 +70,38 @@ def test_a_failing_source_is_an_error_not_an_empty_list():
 
 
 def test_sources_can_be_turned_off():
-    scan = run(Fake(), Options(winget=False, windows_update=False))
+    scan = run(Fake(), Options(winget=False, windows_update=False, dev=False))
     assert Stage.WINGET not in scan.seconds and Stage.WINDOWS_UPDATE not in scan.seconds
+    assert Stage.DEV not in scan.seconds and scan.sources.dev is None
+
+
+def test_elevated_bootstrap_checks_the_hash_before_running():
+    from app.io import elevated
+
+    boot = elevated.bootstrap(r"C:\ProgramData\SoftwareUpdater\jobs\a.ps1", "ab" * 32,
+                              r"C:\ProgramData\SoftwareUpdater\jobs\a.result.json")
+    lines = boot.splitlines()
+    read = next(i for i, l in enumerate(lines) if "ReadAllBytes" in l)
+    check = next(i for i, l in enumerate(lines) if f"exit {elevated.TAMPERED}" in l)
+    run = next(i for i, l in enumerate(lines) if "scriptblock" in l)
+    # One read; the hash of those bytes is checked; those bytes run.
+    assert read < check < run
+    assert sum("ReadAllBytes" in l for l in lines) == 1
+    assert "$b" in lines[run - 1] and "$t" in lines[run]
+
+
+def test_elevated_scripts_carry_their_data_inside():
+    filled = scripts.embed(scripts.WU_INSTALL, request={"ids": ["x'y"], "server": "default"})
+    assert "__REQUEST__" not in filled and "Get-Content" not in filled
+    assert "x''y" in filled          # quoted for PowerShell, not able to end the string
+    clean = scripts.embed(scripts.CLEAN, request={"targets": []})
+    assert "Test-Allowed" in clean and "ReparsePoint" in clean
 
 
 def test_quote_and_fill():
     assert scripts.quote("C:\\it's") == "'C:\\it''s'"
     filled = scripts.fill(scripts.WU_SEARCH, server="windows-update")
     assert "__SERVER__" not in filled and "'windows-update' -eq 'windows-update'" in filled
-    filled = scripts.fill(scripts.WU_INSTALL, request="a.json", result="b.json")
-    assert "__REQUEST__" not in filled and "__RESULT__" not in filled
 
 
 def test_encoded_command_round_trips():
@@ -84,7 +110,7 @@ def test_encoded_command_round_trips():
     encoded = powershell.encode("Write-Output 'é'")
     assert base64.b64decode(encoded).decode("utf-16-le") == "Write-Output 'é'"
     # Scripts that go on a command line stay well under its 32 767 characters.
-    for script in (scripts.DRIVERS, scripts.SYSTEM, scripts.WU_SEARCH):
+    for script in (scripts.DRIVERS, scripts.SYSTEM, scripts.WU_SEARCH, scripts.SECURITY):
         assert len(powershell.encode(script)) < 16000
 
 

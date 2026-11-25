@@ -8,4 +8,4 @@ winget, PowerShell and the registry reads. See CLAUDE.md before adding to any
 of them.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

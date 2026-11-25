@@ -23,9 +23,11 @@ def test_every_menu_item_is_a_command_and_every_toggle_a_setting():
                 assert item[1:] in commands.DYNAMIC
             else:
                 assert item in commands.COMMANDS
-    for group in commands.TOOLBARS["main"]:
-        for item in group:
-            assert item in commands.MARKERS or item in commands.COMMANDS
+    for toolbar in commands.TOOLBARS.values():
+        for group in toolbar:
+            for item in group:
+                assert item in commands.MARKERS or item in commands.COMMANDS
+    assert set(commands.TOOLBARS) == set(commands.SECTIONS)
     for key in commands.TOGGLES.values():
         assert key in DEFAULTS
 
@@ -171,3 +173,59 @@ def test_select_updates_selects_only_updatable(window):
 
     window._rebuild(sample.scan())
     assert len(window.selected()) == len(chosen)
+
+
+
+def test_update_all_never_takes_developer_packages(window):
+    from app.core.inventory import Kind
+
+    taken = window._all_updatable()
+    assert taken and not any(i.kind == Kind.DEV for i in taken)
+    window.run_command("show-dev")
+    assert window.proxy.rowCount() == 4
+
+
+def test_sections_switch_toolbar_and_route_commands(window):
+    window.run_command("section-cleanup")
+    assert window.section() == "cleanup" and "clean-run" in window.toolbar.buttons
+    assert window.command_state("clean-measure").visible
+    assert not window.command_state("space-scan").visible        # the other view's
+    window.run_command("section-security")
+    assert "sec-check" in window.toolbar.buttons
+    window.show_section("software")
+    assert "uninstall" in window.toolbar.buttons
+    # Opening Cleanup and Security started their first jobs; Stop shows
+    # exactly while something runs.
+    running = window.cleanup.busy() or window.security.busy() or window.busy()
+    assert window.command_state("stop").visible == running
+
+
+def test_uninstall_events_mark_rows(window):
+    from app.core.inventory import Status
+
+    item = window.model.item("winget:Git.Git")
+    assert item.removable
+    window._removals = {"winget:Git.Git": "Git"}
+    window._uninstall_event(("u-start", "winget:Git.Git", "Git", "winget uninstall --id Git.Git"))
+    assert window.model.busy["winget:Git.Git"] == "Uninstalling..."
+    window._uninstall_event(("u-done", "winget:Git.Git", True, "Uninstalled."))
+    assert item.status == Status.REMOVED and not item.removable
+    # A later scan stage does not bring it back as "update available".
+    from tests import sample
+
+    window._rebuild(sample.scan())
+    assert window.model.item("winget:Git.Git").status == Status.REMOVED
+
+
+def test_security_page_shows_findings(window):
+    from tests import sample
+
+    window.security._show(sample.security())
+    assert window.security.list.topLevelItemCount() >= 10
+    first = window.security.list.topLevelItem(0).data(0, 0x0100)
+    assert first.level == "bad"
+
+
+def test_cleanup_page_counts_ticked(window):
+    page = window.cleanup
+    assert "recycle-bin" not in page.checked() and "user-temp" in page.checked()

@@ -39,6 +39,8 @@ class Step:
 class Plan:
     winget: list[Step] = field(default_factory=list)
     wu: list[Item] = field(default_factory=list)
+    #: pip and npm packages: one command each, as the user.
+    dev: list[Item] = field(default_factory=list)
     manual: list[Item] = field(default_factory=list)
 
     @property
@@ -51,7 +53,7 @@ class Plan:
 
     @property
     def empty(self) -> bool:
-        return not self.winget and not self.wu
+        return not self.winget and not self.wu and not self.dev
 
     def describe(self) -> list[str]:
         lines = []
@@ -62,6 +64,9 @@ class Plan:
             lines.append(f"{len(self.wu)} from Windows Update, together, after one "
                          "administrator prompt:")
             lines.extend(f"    {i.name}" for i in self.wu)
+        if self.dev:
+            lines.append(f"{len(self.dev)} developer package(s), with pip or npm:")
+            lines.extend(f"    {i.name}" for i in self.dev)
         if self.manual:
             lines.append(f"{len(self.manual)} cannot be updated from here and are left out:")
             lines.extend(f"    {i.name}" for i in self.manual)
@@ -77,6 +82,8 @@ def build(items: list[Item]) -> Plan:
                                     unknown_version=not is_known(item.installed)))
         elif item.updatable and item.action == Action.WU and item.wu_ids:
             plan.wu.append(item)
+        elif item.updatable and item.action in (Action.PIP, Action.NPM) and item.tool:
+            plan.dev.append(item)
         else:
             plan.manual.append(item)
     return plan
